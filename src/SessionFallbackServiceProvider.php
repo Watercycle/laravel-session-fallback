@@ -4,6 +4,7 @@ namespace Fingo\LaravelSessionFallback;
 
 use Illuminate\Foundation\AliasLoader;
 use Illuminate\Session\SessionServiceProvider;
+use Illuminate\Session\Middleware\StartSession;
 
 class SessionFallbackServiceProvider extends SessionServiceProvider
 {
@@ -15,7 +16,7 @@ class SessionFallbackServiceProvider extends SessionServiceProvider
     protected $defer = false;
 
     /**
-     * Register the service provider.
+     * Boot the service provider.
      *
      * @return void
      */
@@ -31,20 +32,30 @@ class SessionFallbackServiceProvider extends SessionServiceProvider
     }
 
     /**
-     * Register
+     * Register the service provider.
      *
-     * @return mixed
+     * @return void
      */
     public function register()
     {
         $this->mergeConfigFrom(__DIR__ . '/config/session_fallback.php', 'session_fallback');
 
-        $this->app->singleton('session', function ($app) {
-            return new SessionFallback($app);
-        });
+        $this->registerSessionManager();
 
         $this->registerSessionDriver();
 
-        $this->app->singleton('Illuminate\Session\Middleware\StartSession');
+        $this->app->singleton(StartSession::class);
+    }
+
+    /**
+     * Register the session manager instance.
+     *
+     * @return void
+     */
+    protected function registerSessionManager()
+    {
+        $this->app->singleton('session', function ($app) {
+            return new SessionFallback($app);
+        });
     }
 }
