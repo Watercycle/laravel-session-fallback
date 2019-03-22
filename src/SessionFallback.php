@@ -13,16 +13,6 @@ use Illuminate\Session\SessionManager;
  */
 class SessionFallback extends SessionManager
 {
-
-    /**
-     * @var array Array of cache based stores
-     */
-    protected static $expectedStores = [
-        'redis' => 'Illuminate\Redis\Database',
-        'memcached' => 'Illuminate\Memcached\Database',
-        'apc' => 'Illuminate\Cache\ApcWrapper'
-    ];
-
     /**
      * Create a new driver instance.
      *
@@ -35,30 +25,22 @@ class SessionFallback extends SessionManager
     protected function createDriver($driver)
     {
         try {
-            return parent::createDriver($driver);
+            return retry(
+                config('session_fallback.attempts_before_fallback'),
+                function () use ($driver) {
+                    return parent::createDriver($driver);
+                }, config('session_fallback.interval_between_attempts')
+            );
         } catch (Exception $e) {
+            report($e);
+
             if ($newDriver = $this->nextDriver($driver)) {
                 return $this->createDriver($newDriver);
             }
+            // Throw the exception if we have exhaused all our options
             throw $e;
         }
     }
-
-    /**
-     * Create the cache based session handler instance.
-     *
-     * @param string $driver
-     * @return \Illuminate\Session\CacheBasedSessionHandler
-     */
-    protected function createCacheHandler($driver)
-    {
-        $handler = parent::createCacheHandler($driver);
-        if (!$this->validateCacheHandler($driver, $handler)) {
-            throw new \UnexpectedValueException('Wrong cache driver found');
-        }
-        return $handler;
-    }
-
 
     /**
      * Create an instance of the Redis session driver.
@@ -68,52 +50,30 @@ class SessionFallback extends SessionManager
     protected function createRedisDriver()
     {
         $handler = $this->createCacheHandler('redis');
-        if (!is_a($handler->getCache()->getStore(), RedisStore::class)) {
-            throw new \UnexpectedValueException('Wrong cache driver found');
-        }
-        $handler->getCache()->getStore()->getRedis()->ping();
-        $handler->getCache()->getStore()->setConnection($this->app['config']['session.connection']);
-        return $this->buildSession($handler);
-    }
 
-    /**
-     * @param $driver
-     * @return bool
-     */
-    public function nextDriver($driver)
-    {
-        $driverOrder = config('session_fallback.fallback_order');
-        if (in_array($driver, $driverOrder, true) && last($driverOrder) !== $driver) {
-            $nextKey = array_search($driver, $driverOrder, true) + 1;
-            return $driverOrder[$nextKey];
-        }
-        return false;
+        $handler->getCache()->getStore()->setConnection(
+            $this->app['config']['session.connection']
+        );
+
+        // Check if the connection is alive
+        $handler->getCache()->getStore()->getRedis()->ping();
+
+        return $this->buildSession($handler);
     }
 
     /**
      * Get next driver name based on fallback order
      *
-     * @return \Illuminate\Session\Store
+     * @param $driverName
+     * @return string|null
      */
-    protected function createDatabaseDriver()
+    public function nextDriver($driverName)
     {
-        $connection = $this->getDatabaseConnection();
-        $connection->getReadPdo();
-        $table = $this->app['config']['session.table'];
-        return $this->buildSession(new DatabaseSessionHandler($connection, $table, $this->app));
-
-    }
-
-    /**
-     * Check if session has right store
-     *
-     * @param $driver
-     * @param $handler
-     * @return bool
-     */
-    public function validateCacheHandler($driver, $handler)
-    {
-        $store = $handler->getCache()->getStore();
-        return static::$expectedStores[$driver] !== get_class($store);
+        $driverOrder = config('session_fallback.fallback_order');
+        if (in_array($driverName, $driverOrder, true) && last($driverOrder) !== $driverName) {
+            $nextKey = array_search($driverName, $driverOrder, true) + 1;
+            return $driverOrder[$nextKey];
+        }
+        return null;
     }
 }
