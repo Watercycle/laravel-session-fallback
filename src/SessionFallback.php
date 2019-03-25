@@ -6,6 +6,7 @@ use Exception;
 use Illuminate\Cache\RedisStore;
 use Illuminate\Session\DatabaseSessionHandler;
 use Illuminate\Session\SessionManager;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Class SessionFallback
@@ -32,7 +33,7 @@ class SessionFallback extends SessionManager
                 }, config('session_fallback.interval_between_attempts')
             );
         } catch (Exception $e) {
-            report($e);
+            Log::error($e);
 
             if ($newDriver = $this->nextDriver($driver)) {
                 return $this->createDriver($newDriver);
