@@ -52,12 +52,18 @@ class SessionFallback extends SessionManager
     {
         $handler = $this->createCacheHandler('redis');
 
-        $handler->getCache()->getStore()->setConnection(
-            $this->app['config']['session.connection']
-        );
+        $store = $handler->getCache()->getStore();
 
-        // Check if the connection is alive
-        $handler->getCache()->getStore()->getRedis()->ping();
+        if (method_exists($store, 'setConnection')) {
+            $store->setConnection(
+                $this->app['config']['session.connection']
+            );
+        }
+
+        if (method_exists($store, 'getRedis')) {
+            // Check if the connection is alive
+            $store->getRedis()->ping();
+        }
 
         return $this->buildSession($handler);
     }
